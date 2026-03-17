@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>All It Took Was Null - 0xwilayah</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <nav class="site-nav">
+        <a href="../index.html" class="site-title">0xwilayah</a>
+        <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')">
+          <span></span><span></span><span></span>
+        </button>
+        <ul class="nav-links">
+          <li><a href="../thoughts.html">thoughts</a></li>
+          <li><a href="../writeups.html" class="active">writeups</a></li>
+          <li><a href="../about.html">about</a></li>
+        </ul>
+      </nav>
+      <div class="author-strip">
+        <img src="../images/kamikaze.jpeg" alt="AmirWilayah" class="author-avatar">
+        <div class="author-info">
+          <h1 class="author-name">AmirWilayah</h1>
+          <p class="author-bio">pentester</p>
+          <ul class="author-links">
+            <li><a href="mailto:wilayahhhh@gmail.com">Email</a></li>
+            <li><a href="https://www.linkedin.com/in/0xwilayah/" target="_blank">LinkedIn</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="main-wrap">
+    <div class="content-card">
+
+      <article>
+        <header class="article-header">
+          <h1 class="article-title">All It Took Was Null</h1>
+          <div class="article-meta">
+            2026 &nbsp;|&nbsp; 17 March 
+          </div>
+        </header>
+
+        <div class="article-body">
+
+          <div class="callout-straw">A null. That's all it took to bypass an entire fraud system.</div>
+
+          <p>This is one of the interesting bugs that I happened to find during an assessment for one of my clients.
+          It was really weird at first glance when I tried to tinker with the HTTPS request inside <span class="highlight-matcha">Burp</span>. At the time, I was reading a book on some psychological stuff and trying to practise one or two things, like taking a step back and not taking something at face value, or taking a look at nature and then applying it to find bugs.</p>
+
+          <p>I am writing this because the process of finding this was pretty amusing, and some of it may apply to everyday life.</p>
+
+          <!-- Table of Contents -->
+          <nav class="toc">
+            <div class="toc-title">contents</div>
+            <ol>
+              <li><a href="#introduction">Introduction</a></li>
+              <li><a href="#building-test-cases">Building custom test cases</a></li>
+              <li><a href="#finding-weak-spot">Finding the weak spot</a></li>
+              <li><a href="#exploit">Exploit</a></li>
+              <li><a href="#funny-story">Funny Story</a></li>
+            </ol>
+          </nav>
+
+          <h2 id="introduction">Introduction</h2>
+
+          <p>Early in the assessment, there was a walkthrough as usual. I saw that the scope of it was the implementation of a <span class="highlight-matcha">third-party program</span> on the mobile app as a defence when a scenario like a user being blacklisted from the [redacted], or unable to log in, etc.</p>
+
+          <p>Hmm.. pretty interesting. The scope is not that large and it goes general. From login until certain modules where the <span class="highlight-straw">fraud system</span> would block the user based on the business module itself.
+          So.. what do we do now?</p>
+
+          <h2 id="building-test-cases">Building custom test cases</h2>
+
+          <p>As I thought about this scope, the best possible way was to find the <span class="highlight-matcha">primary objective</span>.
+          How does the backend verify the request and response? How is the third-party fraud system implemented in this system?</p>
+
+          <p>For this app, it was my second time doing the assessment and I am not really that familiar with it, as this mobile app is <span class="highlight-straw">fully obfuscated with cryptography</span>. Every parameter input has its own hash or algorithm.</p>
+
+          <p>In a human mind.. this would be an uncomfortable zone. What to test? Does the OWASP top 10 really matter at this point? No source code either to check what variable each parameter is. So, for me to build a test case, I need to satisfy some requirements which I determined are important:</p>
+
+          <ol>
+            <li>What is actually needed in the HTTPS request</li>
+            <li>What parameter can be removed? If removed, what happens?</li>
+            <li>Can I add a new parameter or not?</li>
+            <li>Most important, <span class="highlight-straw">how can I trigger an error?</span> For me, this is the essential one. Like SQL injection or other types of bugs, the most important thing is to know how the backend behaves after sending whatever regex, unicode, or whatever input from the user.</li>
+            <li>Do I need to change the request or the response?</li>
+            <li>What is the <span class="highlight-matcha">threat model</span> here? Bypass the third party?</li>
+            <li>Compare the <span class="highlight-matcha">normal flow</span> and the flow that has been <span class="highlight-straw">blocked by the fraud system</span>. Which component is needed to bypass the mechanism?</li>
+          </ol>
+
+          <p>There are other requirements which were in my mind when I was trying to tinker with the request, but I just kept the most important ones here.</p>
+
+          <h2 id="finding-weak-spot">Finding the weak spot</h2>
+
+          <p>As the app encrypts all the parameters itself, I was trying to find some response or some error that was <span class="highlight-matcha">not encrypted</span>. I found an API endpoint where the response was <span class="highlight-straw">null</span> and had a custom status which indicated maybe success or failure. It was a custom code for sure. From building the test cases, I found that I needed to send a response to the fraud system so that it would return the subsequent API which was blocked.</p>
+
+          <p>The main idea was to create a hypothesis:</p>
+
+          <ol>
+            <li>Make an edited <span class="highlight-matcha">trusted response</span> that is sent from the server, which the client (app) accepts, and then the subsequent API will accept <span class="highlight-straw">(fraud bypass)</span></li>
+            <li>Take a response from any API which will make the subsequent API be called <span class="highlight-straw">(fraud bypass)</span></li>
+            <li>Guess if the microservices API share the same parameter or <span class="highlight-matcha">intrinsic behaviour</span> which makes the client trust the response from the server <span class="highlight-straw">(fraud bypass)</span></li>
+          </ol>
+
+          <h2 id="exploit">Exploit</h2>
+
+          <p>Some of the bypasses of the fraud system:</p>
+
+          <div class="callout"><strong>Test Case 1:</strong> Sending <span class="highlight-straw">null</span> and some custom [redacted] status which indicates success</div>
+
+          <img src="../images/Original1.png" alt="Burp response normal">
+            <p>Orignal Burp Response</p>
+
+          <img src="../images/Edited2.png" alt="Burp response edited">
+            <p>Edited Burp Response</p>
+
+
+          <div class="callout"><strong>Test Case 2:</strong> Taking a response from [redactedAPI] and pasting it on the blocked API to get to the subsequent API</div>
+
+          <img src="../images/Edited1.png" alt="Burp response edited">
+            <p>Edited Burp Response For 2nd test case</p>
+
+          <p>There are other test cases which inherently give a bypass to the module in scope, but they are not really that interesting to talk about. I think there were about <span class="highlight-matcha">12 to 14 test cases</span> and maybe <span class="highlight-straw">4 to 5 root issues</span>; some test cases may share the same root issue.</p>
+
+          <h2 id="funny-story">Funny Story</h2>
+
+          <p>I was recording a lot of videos and having a meeting every time this fraud system got bypassed after the report was sent, as there were many root issues. Or maybe the fix caused a <span class="highlight-straw">regression</span>? I don't know which one.</p>
+
+          <p>I also went to their PC and had a face-to-face discussion with the SWE and the mobile developer. There was also an SA near the table. I don't really want to talk about the fix because it is very specific on how they wanted to put something in to know the origin of the request to make it unique.</p>
+
+          <div class="callout-straw">If you test third-party integrations, don't trust the glue code. Try to tinker and see what happens.</div>
+
+        </div>
+
+        <div class="share-links">
+          <h4>share on</h4>
+          <a href="#" onclick="window.open('https://www.linkedin.com/shareArticle?mini=true&url='+encodeURIComponent(window.location.href),'_blank');return false;">LinkedIn</a>
+        </div>
+      </article>
+
+    </div>
+  </div>
+
+  <footer class="site-footer">Eat a Bread.</footer>
+
+</body>
+</html>
